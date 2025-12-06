@@ -1,0 +1,15 @@
+[package]
+name = "physics-models"
+version = "0.1.0"
+description = "Aerodynamic and hydrodynamic models"
+
+[models]
+drag = { wit = "wit/drag.wit", world = "drag-model" }
+
+[targets.python]
+package_name = "physics_models"
+output_dir = "dist/python"
+
+[targets.rust]
+crate_name = "physics-models"
+output_dir = "dist/rust"

@@ -11,8 +11,8 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
     let mut resolve = Resolve::default();
 
     // Parse the WIT file
-    let contents =
-        std::fs::read_to_string(path).with_context(|| format!("Failed to read WIT file: {:?}", path))?;
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read WIT file: {:?}", path))?;
 
     let pkg_group = UnresolvedPackageGroup::parse(path, &contents)
         .with_context(|| format!("Failed to parse WIT file: {:?}", path))?;
@@ -87,7 +87,9 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                     if func_name.contains("constructor") && params_record.is_none() {
                         // Constructor parameter should be the params type
                         if let Some((_name, param_type)) = func.params.first() {
-                            if let Some(record) = try_extract_record_from_type(&resolve, param_type, "Params") {
+                            if let Some(record) =
+                                try_extract_record_from_type(&resolve, param_type, "Params")
+                            {
                                 params_record = Some(record);
                             }
                         }
@@ -95,8 +97,12 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                     if func_name.ends_with(".step") || func_name == "step" {
                         // step(inputs) -> outputs
                         if inputs_record.is_none() {
-                            if let Some((_name, input_type)) = func.params.iter().find(|(n, _)| n != "self") {
-                                if let Some(record) = try_extract_record_from_type(&resolve, input_type, "Inputs") {
+                            if let Some((_name, input_type)) =
+                                func.params.iter().find(|(n, _)| n != "self")
+                            {
+                                if let Some(record) =
+                                    try_extract_record_from_type(&resolve, input_type, "Inputs")
+                                {
                                     inputs_record = Some(record);
                                 }
                             }
@@ -105,13 +111,21 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                             match &func.results {
                                 wit_parser::Results::Named(named) => {
                                     if let Some((_, output_type)) = named.first() {
-                                        if let Some(record) = try_extract_record_from_type(&resolve, output_type, "Outputs") {
+                                        if let Some(record) = try_extract_record_from_type(
+                                            &resolve,
+                                            output_type,
+                                            "Outputs",
+                                        ) {
                                             outputs_record = Some(record);
                                         }
                                     }
                                 }
                                 wit_parser::Results::Anon(output_type) => {
-                                    if let Some(record) = try_extract_record_from_type(&resolve, output_type, "Outputs") {
+                                    if let Some(record) = try_extract_record_from_type(
+                                        &resolve,
+                                        output_type,
+                                        "Outputs",
+                                    ) {
                                         outputs_record = Some(record);
                                     }
                                 }
@@ -124,9 +138,12 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
         }
     }
 
-    let params = params_record.ok_or_else(|| anyhow::anyhow!("Could not find 'params' record in interface"))?;
-    let inputs = inputs_record.ok_or_else(|| anyhow::anyhow!("Could not find 'inputs' record in interface"))?;
-    let outputs = outputs_record.ok_or_else(|| anyhow::anyhow!("Could not find 'outputs' record in interface"))?;
+    let params = params_record
+        .ok_or_else(|| anyhow::anyhow!("Could not find 'params' record in interface"))?;
+    let inputs = inputs_record
+        .ok_or_else(|| anyhow::anyhow!("Could not find 'inputs' record in interface"))?;
+    let outputs = outputs_record
+        .ok_or_else(|| anyhow::anyhow!("Could not find 'outputs' record in interface"))?;
 
     Ok(ModelInterface {
         name: model_name.to_string(),
@@ -137,7 +154,11 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
     })
 }
 
-fn extract_record(resolve: &Resolve, type_def: &wit_parser::TypeDef, name: &str) -> Result<RecordDef> {
+fn extract_record(
+    resolve: &Resolve,
+    type_def: &wit_parser::TypeDef,
+    name: &str,
+) -> Result<RecordDef> {
     match &type_def.kind {
         TypeDefKind::Record(record) => {
             let fields = record

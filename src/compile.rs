@@ -38,11 +38,7 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        anyhow::bail!(
-            "cargo component build failed:\n{}\n{}",
-            stdout,
-            stderr
-        );
+        anyhow::bail!("cargo component build failed:\n{}\n{}", stdout, stderr);
     }
 
     // Find the generated WASM file
@@ -78,8 +74,8 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
     let cargo_toml_path = project_dir.join("Cargo.toml");
     let cargo_toml = std::fs::read_to_string(&cargo_toml_path)
         .with_context(|| format!("Failed to read {:?}", cargo_toml_path))?;
-    let cargo_manifest: toml::Table = toml::from_str(&cargo_toml)
-        .with_context(|| "Failed to parse Cargo.toml")?;
+    let cargo_manifest: toml::Table =
+        toml::from_str(&cargo_toml).with_context(|| "Failed to parse Cargo.toml")?;
 
     let package_name = cargo_manifest
         .get("package")
@@ -96,7 +92,7 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
         let entries: Vec<_> = std::fs::read_dir(&target_dir)
             .with_context(|| format!("Failed to read {:?}", target_dir))?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "wasm"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "wasm"))
             .collect();
 
         if entries.is_empty() {
@@ -110,8 +106,8 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
         // Use the first .wasm file found
         let wasm_path = entries[0].path();
         println!("  Found WASM: {:?}", wasm_path);
-        let bytes = std::fs::read(&wasm_path)
-            .with_context(|| format!("Failed to read {:?}", wasm_path))?;
+        let bytes =
+            std::fs::read(&wasm_path).with_context(|| format!("Failed to read {:?}", wasm_path))?;
 
         let mut result = HashMap::new();
         result.insert("main".to_string(), bytes);
@@ -119,8 +115,8 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
     }
 
     println!("  Built: {:?}", wasm_path);
-    let bytes = std::fs::read(&wasm_path)
-        .with_context(|| format!("Failed to read {:?}", wasm_path))?;
+    let bytes =
+        std::fs::read(&wasm_path).with_context(|| format!("Failed to read {:?}", wasm_path))?;
 
     // For MVP, we use a single WASM module for all models
     let mut result = HashMap::new();
@@ -130,7 +126,10 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
 }
 
 /// Find existing WASM file (for --skip-compile mode).
-pub fn find_existing_wasm(project_dir: &Path, _manifest: &MoltManifest) -> Result<HashMap<String, Vec<u8>>> {
+pub fn find_existing_wasm(
+    project_dir: &Path,
+    _manifest: &MoltManifest,
+) -> Result<HashMap<String, Vec<u8>>> {
     // Look for WASM file in standard locations
     let possible_targets = [
         "target/wasm32-wasip1/release",
@@ -147,7 +146,7 @@ pub fn find_existing_wasm(project_dir: &Path, _manifest: &MoltManifest) -> Resul
         let entries: Vec<_> = std::fs::read_dir(&target_dir)
             .with_context(|| format!("Failed to read {:?}", target_dir))?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "wasm"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "wasm"))
             .collect();
 
         if let Some(entry) = entries.first() {
@@ -162,7 +161,5 @@ pub fn find_existing_wasm(project_dir: &Path, _manifest: &MoltManifest) -> Resul
         }
     }
 
-    anyhow::bail!(
-        "No existing WASM file found. Run `molt build` without --skip-compile first."
-    );
+    anyhow::bail!("No existing WASM file found. Run `molt build` without --skip-compile first.");
 }

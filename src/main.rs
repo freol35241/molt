@@ -1,4 +1,4 @@
-//! MOLT CLI - Model Once, Load Trivially
+//! molt CLI - Model Once, Load Trivially
 //!
 //! Build-time toolkit for multi-language model packages.
 
@@ -68,7 +68,11 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_build(manifest_path: Option<PathBuf>, target: Option<String>, skip_compile: bool) -> Result<()> {
+fn cmd_build(
+    manifest_path: Option<PathBuf>,
+    target: Option<String>,
+    skip_compile: bool,
+) -> Result<()> {
     let manifest_path = manifest_path.unwrap_or_else(|| PathBuf::from("molt.toml"));
     let project_dir = manifest_path
         .parent()
@@ -167,7 +171,7 @@ fn cmd_init(name: String, path: Option<PathBuf>) -> Result<()> {
         r#"[package]
 name = "{name}"
 version = "0.1.0"
-description = "A MOLT model package"
+description = "A molt model package"
 
 [models]
 example = {{ wit = "wit/example.wit", world = "example-model" }}
@@ -292,9 +296,33 @@ fn cmd_check(manifest_path: Option<PathBuf>) -> Result<()> {
         let model = wit::parse_wit_file(&wit_path, &model_config.world, name)
             .with_context(|| format!("Failed to parse WIT file {:?}", wit_path))?;
         println!("OK");
-        println!("    params: {:?}", model.params.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
-        println!("    inputs: {:?}", model.inputs.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
-        println!("    outputs: {:?}", model.outputs.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+        println!(
+            "    params: {:?}",
+            model
+                .params
+                .fields
+                .iter()
+                .map(|f| &f.name)
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "    inputs: {:?}",
+            model
+                .inputs
+                .fields
+                .iter()
+                .map(|f| &f.name)
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "    outputs: {:?}",
+            model
+                .outputs
+                .fields
+                .iter()
+                .map(|f| &f.name)
+                .collect::<Vec<_>>()
+        );
     }
 
     println!("\nAll checks passed!");

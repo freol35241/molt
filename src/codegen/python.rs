@@ -436,11 +436,7 @@ fn generate_param_list(fields: &[FieldDef]) -> String {
         .join(", ")
 }
 
-fn generate_create_function(
-    model: &ModelInterface,
-    snake_name: &str,
-    pascal_name: &str,
-) -> String {
+fn generate_create_function(model: &ModelInterface, snake_name: &str, pascal_name: &str) -> String {
     let params_args = generate_param_list(&model.params.fields);
     let params_dict_entries: Vec<String> = model
         .params
@@ -461,7 +457,12 @@ fn generate_create_function(
         .outputs
         .fields
         .iter()
-        .map(|f| format!("{}=raw.get(\"{}\", raw.get(\"{}\"))", f.name, f.wit_name, f.name))
+        .map(|f| {
+            format!(
+                "{}=raw.get(\"{}\", raw.get(\"{}\"))",
+                f.name, f.wit_name, f.name
+            )
+        })
         .collect();
 
     // Generate docstring with parameter descriptions

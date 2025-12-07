@@ -13,3 +13,13 @@
 
 # Distribution directories
 dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Generated files
+**/bindings.rs
+**/Cargo.lock

@@ -1,11 +1,8 @@
 wit_bindgen::generate!({
     world: "drag-model",
-    exports: {
-        "myorg:physics/drag/model": DragModel,
-    },
 });
 
-use exports::myorg::physics::drag::{GuestModel, Inputs, Outputs, Params};
+use exports::myorg::physics::drag::{Guest, GuestModel, Inputs, Outputs, Params};
 
 pub struct DragModel {
     params: Params,
@@ -24,3 +21,12 @@ impl GuestModel for DragModel {
         }
     }
 }
+
+// The interface export struct
+pub struct MyPhysics;
+
+impl Guest for MyPhysics {
+    type Model = DragModel;
+}
+
+export!(MyPhysics);

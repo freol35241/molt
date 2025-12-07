@@ -76,6 +76,7 @@ fn cmd_build(
     let manifest_path = manifest_path.unwrap_or_else(|| PathBuf::from("molt.toml"));
     let project_dir = manifest_path
         .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."))
         .to_path_buf();
 
@@ -243,12 +244,9 @@ path = "wit"
     // Create lib.rs
     let lib_rs = r#"wit_bindgen::generate!({
     world: "example-model",
-    exports: {
-        "example": ExampleModel,
-    },
 });
 
-use exports::example::{GuestModel, Inputs, Outputs, Params};
+use exports::example::{Guest, GuestModel, Inputs, Outputs, Params};
 
 pub struct ExampleModel {
     params: Params,
@@ -265,6 +263,14 @@ impl GuestModel for ExampleModel {
         }
     }
 }
+
+pub struct Example;
+
+impl Guest for Example {
+    type Model = ExampleModel;
+}
+
+export!(Example);
 "#;
     std::fs::write(project_dir.join("src/lib.rs"), lib_rs)?;
 
@@ -281,6 +287,7 @@ fn cmd_check(manifest_path: Option<PathBuf>) -> Result<()> {
     let manifest_path = manifest_path.unwrap_or_else(|| PathBuf::from("molt.toml"));
     let project_dir = manifest_path
         .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."))
         .to_path_buf();
 

@@ -1,0 +1,10 @@
+[package]
+name = "primitives-example"
+version = "0.1.0"
+
+[models.types]
+wit = "wit/types.wit"
+world = "types-model"
+
+[targets.python]
+package_name = "primitives_example"

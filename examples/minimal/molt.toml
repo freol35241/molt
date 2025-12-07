@@ -1,0 +1,10 @@
+[package]
+name = "minimal-example"
+version = "0.1.0"
+
+[models.scale]
+wit = "wit/scale.wit"
+world = "scale-model"
+
+[targets.python]
+package_name = "minimal_example"

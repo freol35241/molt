@@ -12,7 +12,10 @@ import pytest
 # Project root directory
 ROOT_DIR = Path(__file__).parent.parent
 EXAMPLES_DIR = ROOT_DIR / "examples"
-DRAG_MODEL_DIR = EXAMPLES_DIR / "drag-model"
+MINIMAL_DIR = EXAMPLES_DIR / "minimal"
+PRIMITIVES_DIR = EXAMPLES_DIR / "primitives"
+COLLECTIONS_DIR = EXAMPLES_DIR / "collections"
+MULTI_MODEL_DIR = EXAMPLES_DIR / "multi-model"
 
 
 def get_env_with_cargo():
@@ -61,25 +64,38 @@ def cargo_component_available() -> bool:
 
 
 @pytest.fixture(scope="session")
-def built_drag_model(molt_binary: Path, cargo_component_available: bool, tmp_path_factory) -> Path:
-    """Build the drag-model example and return path to generated Python package."""
+def built_minimal_example(molt_binary: Path, cargo_component_available: bool, tmp_path_factory) -> Path:
+    """Build the minimal example and return path to generated Python package."""
     if not cargo_component_available:
         pytest.skip("cargo-component not available")
 
     # Create a temporary directory for the build
-    build_dir = tmp_path_factory.mktemp("drag-model-build")
+    build_dir = tmp_path_factory.mktemp("minimal-build")
 
     # Copy the example to temp dir (so we don't pollute the source tree)
-    example_copy = build_dir / "drag-model"
-    shutil.copytree(DRAG_MODEL_DIR, example_copy)
+    example_copy = build_dir / "minimal"
+    shutil.copytree(MINIMAL_DIR, example_copy)
 
-    # Run molt build
+    # Step 1: Compile WASM using cargo component directly
+    # (This avoids issues with nested subprocess spawning)
     result = subprocess.run(
-        [str(molt_binary), "build"],
+        ["cargo", "component", "build", "--release"],
         cwd=example_copy,
         capture_output=True,
         text=True,
         timeout=300,  # 5 minute timeout for WASM compilation
+        env=get_env_with_cargo(),
+    )
+    if result.returncode != 0:
+        pytest.fail(f"cargo component build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}")
+
+    # Step 2: Run molt build with --skip-compile to generate Python package
+    result = subprocess.run(
+        [str(molt_binary), "build", "--skip-compile"],
+        cwd=example_copy,
+        capture_output=True,
+        text=True,
+        timeout=60,
         env=get_env_with_cargo(),
     )
     if result.returncode != 0:
@@ -94,7 +110,7 @@ def built_drag_model(molt_binary: Path, cargo_component_available: bool, tmp_pat
 
 
 @pytest.fixture(scope="session")
-def installed_package_venv(built_drag_model: Path, tmp_path_factory) -> Path:
+def installed_package_venv(built_minimal_example: Path, tmp_path_factory) -> Path:
     """
     Create a fresh virtual environment with the generated package installed.
 
@@ -108,10 +124,8 @@ def installed_package_venv(built_drag_model: Path, tmp_path_factory) -> Path:
     # Determine pip path based on platform
     if sys.platform == "win32":
         pip_path = venv_dir / "Scripts" / "pip"
-        python_path = venv_dir / "Scripts" / "python"
     else:
         pip_path = venv_dir / "bin" / "pip"
-        python_path = venv_dir / "bin" / "python"
 
     # Install wasmtime first (required dependency)
     result = subprocess.run(
@@ -125,7 +139,7 @@ def installed_package_venv(built_drag_model: Path, tmp_path_factory) -> Path:
 
     # Install the generated package
     result = subprocess.run(
-        [str(pip_path), "install", str(built_drag_model)],
+        [str(pip_path), "install", str(built_minimal_example)],
         capture_output=True,
         text=True,
         timeout=120,

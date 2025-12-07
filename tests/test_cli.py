@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from conftest import DRAG_MODEL_DIR, ROOT_DIR, get_env_with_cargo
+from conftest import MINIMAL_DIR, PRIMITIVES_DIR, ROOT_DIR, get_env_with_cargo
 
 
 class TestMoltCheck:
     """Tests for `molt check` command."""
 
-    def test_check_drag_model(self, molt_binary: Path):
-        """molt check should validate the drag-model example successfully."""
+    def test_check_minimal_example(self, molt_binary: Path):
+        """molt check should validate the minimal example successfully."""
         result = subprocess.run(
             [str(molt_binary), "check"],
-            cwd=DRAG_MODEL_DIR,
+            cwd=MINIMAL_DIR,
             capture_output=True,
             text=True,
         )
@@ -28,7 +28,7 @@ class TestMoltCheck:
 
     def test_check_with_manifest_path(self, molt_binary: Path):
         """molt check should accept --manifest flag."""
-        manifest_path = DRAG_MODEL_DIR / "molt.toml"
+        manifest_path = MINIMAL_DIR / "molt.toml"
         result = subprocess.run(
             [str(molt_binary), "check", "--manifest", str(manifest_path)],
             cwd=ROOT_DIR,
@@ -38,6 +38,21 @@ class TestMoltCheck:
 
         assert result.returncode == 0, f"molt check failed:\n{result.stderr}"
         assert "All checks passed!" in result.stdout
+
+    def test_check_primitives_example(self, molt_binary: Path):
+        """molt check should validate the primitives example with various types."""
+        result = subprocess.run(
+            [str(molt_binary), "check"],
+            cwd=PRIMITIVES_DIR,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"molt check failed:\n{result.stderr}"
+        assert "All checks passed!" in result.stdout
+        # Check that multiple types are recognized
+        assert "scale_f64" in result.stdout
+        assert "enabled" in result.stdout
 
     def test_check_missing_manifest(self, molt_binary: Path, tmp_path: Path):
         """molt check should fail gracefully with missing manifest."""
@@ -65,16 +80,27 @@ class TestMoltBuild:
         # Copy example to temp dir
         import shutil
 
-        example_copy = tmp_path / "drag-model"
-        shutil.copytree(DRAG_MODEL_DIR, example_copy)
+        example_copy = tmp_path / "minimal"
+        shutil.copytree(MINIMAL_DIR, example_copy)
 
-        # Run molt build
+        # Step 1: Compile WASM using cargo component directly
         result = subprocess.run(
-            [str(molt_binary), "build"],
+            ["cargo", "component", "build", "--release"],
             cwd=example_copy,
             capture_output=True,
             text=True,
             timeout=300,
+            env=get_env_with_cargo(),
+        )
+        assert result.returncode == 0, f"cargo component build failed:\n{result.stdout}\n{result.stderr}"
+
+        # Step 2: Run molt build with --skip-compile
+        result = subprocess.run(
+            [str(molt_binary), "build", "--skip-compile"],
+            cwd=example_copy,
+            capture_output=True,
+            text=True,
+            timeout=60,
             env=get_env_with_cargo(),
         )
 
@@ -85,16 +111,16 @@ class TestMoltBuild:
         python_pkg = example_copy / "dist" / "python"
         assert python_pkg.exists(), "dist/python directory not created"
 
-        pkg_dir = python_pkg / "physics_models"
-        assert pkg_dir.exists(), "physics_models package directory not created"
+        pkg_dir = python_pkg / "minimal_example"
+        assert pkg_dir.exists(), "minimal_example package directory not created"
 
         expected_files = [
             "pyproject.toml",
-            "physics_models/__init__.py",
-            "physics_models/_runtime.py",
-            "physics_models/_wasm.py",
-            "physics_models/drag.py",
-            "physics_models/py.typed",
+            "minimal_example/__init__.py",
+            "minimal_example/_runtime.py",
+            "minimal_example/_wasm.py",
+            "minimal_example/scale.py",
+            "minimal_example/py.typed",
         ]
 
         for file_path in expected_files:
@@ -110,15 +136,27 @@ class TestMoltBuild:
 
         import shutil
 
-        example_copy = tmp_path / "drag-model"
-        shutil.copytree(DRAG_MODEL_DIR, example_copy)
+        example_copy = tmp_path / "minimal"
+        shutil.copytree(MINIMAL_DIR, example_copy)
 
+        # Step 1: Compile WASM using cargo component directly
         result = subprocess.run(
-            [str(molt_binary), "build", "--target", "python"],
+            ["cargo", "component", "build", "--release"],
             cwd=example_copy,
             capture_output=True,
             text=True,
             timeout=300,
+            env=get_env_with_cargo(),
+        )
+        assert result.returncode == 0, f"cargo component build failed:\n{result.stderr}"
+
+        # Step 2: Run molt build with --skip-compile and --target
+        result = subprocess.run(
+            [str(molt_binary), "build", "--skip-compile", "--target", "python"],
+            cwd=example_copy,
+            capture_output=True,
+            text=True,
+            timeout=60,
             env=get_env_with_cargo(),
         )
 

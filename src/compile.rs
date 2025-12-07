@@ -6,12 +6,89 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
+/// Find the cargo binary path.
+fn find_cargo() -> Result<std::path::PathBuf> {
+    // Try to find cargo in common locations (including actual rustup toolchain paths)
+    let paths = [
+        std::path::PathBuf::from("/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"),
+        std::path::PathBuf::from("/root/.cargo/bin/cargo"),
+        std::path::PathBuf::from("/usr/local/cargo/bin/cargo"),
+        std::path::PathBuf::from("/usr/bin/cargo"),
+    ];
+
+    for path in &paths {
+        if path.exists() {
+            return Ok(path.clone());
+        }
+    }
+
+    // Try finding via which command
+    if let Ok(output) = Command::new("which").arg("cargo").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(std::path::PathBuf::from(path));
+            }
+        }
+    }
+
+    // Fall back to just "cargo" and let PATH handle it
+    Ok(std::path::PathBuf::from("cargo"))
+}
+
+/// Get environment with cargo bin in PATH.
+fn get_cargo_env() -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+
+    // Ensure ~/.cargo/bin is in PATH
+    let cargo_bin = dirs::home_dir()
+        .map(|h| h.join(".cargo").join("bin"))
+        .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo/bin"));
+
+    let path = env.iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+
+    if !path.contains(cargo_bin.to_string_lossy().as_ref()) {
+        let new_path = format!("{}:{}", cargo_bin.display(), path);
+        env.retain(|(k, _)| k != "PATH");
+        env.push(("PATH".to_string(), new_path));
+    }
+
+    // Ensure RUSTUP_HOME is set
+    if !env.iter().any(|(k, _)| k == "RUSTUP_HOME") {
+        let rustup_home = dirs::home_dir()
+            .map(|h| h.join(".rustup"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/root/.rustup"));
+        if rustup_home.exists() {
+            env.push(("RUSTUP_HOME".to_string(), rustup_home.to_string_lossy().to_string()));
+        }
+    }
+
+    // Ensure CARGO_HOME is set
+    if !env.iter().any(|(k, _)| k == "CARGO_HOME") {
+        let cargo_home = dirs::home_dir()
+            .map(|h| h.join(".cargo"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo"));
+        if cargo_home.exists() {
+            env.push(("CARGO_HOME".to_string(), cargo_home.to_string_lossy().to_string()));
+        }
+    }
+
+    env
+}
+
 /// Compile the project to WASM using cargo-component.
 pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
+    let cargo = find_cargo()?;
+    let env = get_cargo_env();
+
     // Check for cargo-component
-    let status = Command::new("cargo")
+    let status = Command::new(&cargo)
         .args(["component", "--version"])
         .current_dir(project_dir)
+        .envs(env.clone())
         .output();
 
     match status {
@@ -19,19 +96,36 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
             let version = String::from_utf8_lossy(&output.stdout);
             println!("  Using {}", version.trim());
         }
-        _ => {
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
             anyhow::bail!(
                 "cargo-component not found. Install it with:\n\
-                 cargo install cargo-component"
+                 cargo install cargo-component\n\
+                 Exit code: {:?}\n\
+                 stdout: {}\n\
+                 stderr: {}",
+                output.status.code(),
+                stdout,
+                stderr
+            );
+        }
+        Err(e) => {
+            anyhow::bail!(
+                "cargo-component not found. Install it with:\n\
+                 cargo install cargo-component\n\
+                 Error: {}",
+                e
             );
         }
     }
 
     // Run cargo component build
     println!("  Running cargo component build --release...");
-    let output = Command::new("cargo")
+    let output = Command::new(&cargo)
         .args(["component", "build", "--release"])
         .current_dir(project_dir)
+        .envs(env)
         .output()
         .with_context(|| "Failed to execute cargo component build")?;
 

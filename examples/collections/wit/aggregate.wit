@@ -1,0 +1,46 @@
+/// Collections example: demonstrates list and option types.
+/// Shows how to work with arrays and optional values.
+package example:collections;
+
+interface aggregate {
+    /// Model parameters with collection types.
+    record params {
+        /// Weights for weighted operations.
+        weights: list<f64>,
+        /// Default value when input is missing.
+        default-value: option<f64>,
+    }
+
+    /// Model inputs with collections.
+    record inputs {
+        /// List of values to process.
+        values: list<f64>,
+        /// Optional index to select specific value.
+        select-index: option<u32>,
+    }
+
+    /// Model outputs with aggregated results.
+    record outputs {
+        /// Sum of all input values.
+        sum: f64,
+        /// Weighted sum (values * weights, truncated to shorter length).
+        weighted-sum: f64,
+        /// Selected value or default.
+        selected: f64,
+        /// Number of input values.
+        count: u32,
+    }
+
+    /// The model resource.
+    resource model {
+        /// Create a new model with the given parameters.
+        constructor(p: params);
+
+        /// Run one step of the model.
+        step: func(i: inputs) -> outputs;
+    }
+}
+
+world aggregate-model {
+    export aggregate;
+}

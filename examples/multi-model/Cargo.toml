@@ -1,5 +1,5 @@
 [package]
-name = "physics-models"
+name = "multi-model-example"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,8 @@ crate-type = ["cdylib"]
 wit-bindgen = "0.36"
 
 [package.metadata.component]
-package = "myorg:physics"
+package = "example:math"
 
 [package.metadata.component.target]
 path = "wit"
+world = "math-models"

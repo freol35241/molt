@@ -1,0 +1,36 @@
+/// Minimal example: a simple scaling model.
+/// Demonstrates the basic structure of a molt model.
+package example:minimal;
+
+interface scale {
+    /// Model parameters - set once at construction.
+    record params {
+        /// Scaling factor applied to input.
+        factor: f64,
+    }
+
+    /// Model inputs - provided each step.
+    record inputs {
+        /// Value to be scaled.
+        value: f64,
+    }
+
+    /// Model outputs - returned each step.
+    record outputs {
+        /// The scaled value (value * factor).
+        scaled: f64,
+    }
+
+    /// The model resource.
+    resource model {
+        /// Create a new model with the given parameters.
+        constructor(p: params);
+
+        /// Run one step of the model.
+        step: func(i: inputs) -> outputs;
+    }
+}
+
+world scale-model {
+    export scale;
+}

@@ -126,7 +126,11 @@ fn cmd_build(
 
     for (target_name, target_config) in targets_to_build {
         println!("Generating {} package...", target_name);
-        let output_dir = project_dir.join(&target_config.output_dir);
+        let output_dir = target_config
+            .output_dir
+            .as_ref()
+            .map(|p| project_dir.join(p))
+            .unwrap_or_else(|| project_dir.join(format!("dist/{}", target_name)));
 
         match target_name.as_str() {
             "python" => {

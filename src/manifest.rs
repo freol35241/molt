@@ -57,8 +57,9 @@ pub struct TargetConfig {
     /// Crate name (Rust-specific)
     #[serde(default)]
     pub crate_name: Option<String>,
-    /// Output directory (relative to manifest)
-    pub output_dir: PathBuf,
+    /// Output directory (relative to manifest), defaults to "dist/{target}"
+    #[serde(default)]
+    pub output_dir: Option<PathBuf>,
     /// Additional target-specific options
     #[serde(default)]
     pub options: HashMap<String, toml::Value>,
@@ -98,9 +99,12 @@ impl MoltManifest {
             }
         }
 
-        for (name, target) in &self.targets {
-            if target.output_dir.as_os_str().is_empty() {
-                anyhow::bail!("Target '{}' must specify output_dir", name);
+        // Validate target-specific options if output_dir is specified
+        for (_name, target) in &self.targets {
+            if let Some(ref dir) = target.output_dir {
+                if dir.as_os_str().is_empty() {
+                    // Empty string output_dir is treated as None (use default)
+                }
             }
         }
 

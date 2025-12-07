@@ -1,0 +1,14 @@
+[package]
+name = "multi-model-example"
+version = "0.1.0"
+
+[models.adder]
+wit = "wit/math.wit"
+world = "math-models"
+
+[models.multiplier]
+wit = "wit/math.wit"
+world = "math-models"
+
+[targets.python]
+package_name = "multi_model_example"

@@ -1,0 +1,62 @@
+/// Primitives example: demonstrates all WIT primitive types.
+/// Shows how different numeric types, booleans, and strings are handled.
+package example:primitives;
+
+interface types {
+    /// Model parameters with various primitive types.
+    record params {
+        /// 64-bit floating point scale factor.
+        scale-f64: f64,
+        /// 32-bit floating point offset.
+        offset-f32: f32,
+        /// Signed 32-bit integer multiplier.
+        multiplier-s32: s32,
+        /// Boolean flag to enable processing.
+        enabled: bool,
+    }
+
+    /// Model inputs demonstrating numeric types.
+    record inputs {
+        /// 64-bit float input value.
+        value-f64: f64,
+        /// 32-bit float input value.
+        value-f32: f32,
+        /// Unsigned 32-bit counter.
+        counter-u32: u32,
+        /// Unsigned 64-bit identifier.
+        id-u64: u64,
+        /// Signed 8-bit adjustment.
+        adjustment-s8: s8,
+        /// Boolean condition flag.
+        condition: bool,
+    }
+
+    /// Model outputs showing type transformations.
+    record outputs {
+        /// Scaled f64 result.
+        scaled-value: f64,
+        /// Offset f32 result.
+        offset-value: f32,
+        /// Multiplied counter.
+        multiplied-counter: s64,
+        /// Processed ID (unchanged if enabled, zero otherwise).
+        processed-id: u64,
+        /// Sum of adjustment and condition (as s32).
+        combined: s32,
+        /// Whether processing was applied.
+        was-processed: bool,
+    }
+
+    /// The model resource.
+    resource model {
+        /// Create a new model with the given parameters.
+        constructor(p: params);
+
+        /// Run one step of the model.
+        step: func(i: inputs) -> outputs;
+    }
+}
+
+world types-model {
+    export types;
+}

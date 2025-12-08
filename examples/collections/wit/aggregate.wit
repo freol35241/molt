@@ -36,8 +36,8 @@ interface aggregate {
         /// Create a new model with the given parameters.
         constructor(p: params);
 
-        /// Run one step of the model.
-        step: func(i: inputs) -> outputs;
+        /// Run one prediction step.
+        predict: func(i: inputs) -> result<outputs, string>;
     }
 }
 

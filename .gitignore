@@ -24,3 +24,4 @@ __pycache__/
 # Generated files
 **/bindings.rs
 **/Cargo.lock
+**/molt-gen/

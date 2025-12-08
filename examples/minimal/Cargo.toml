@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+path = "molt-gen/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -14,4 +15,3 @@ package = "example:minimal"
 
 [package.metadata.component.target]
 path = "wit"
-world = "scale-model"

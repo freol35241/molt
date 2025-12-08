@@ -9,11 +9,15 @@ pub struct ModelInterface {
     pub name: String,
     /// WIT package (e.g., "myorg:physics")
     pub package: String,
+    /// WIT world name (e.g., "drag-model")
+    pub world: String,
+    /// Full export path (e.g., "myorg:physics/drag/model")
+    pub export_path: String,
     /// Constructor parameters record
     pub params: RecordDef,
-    /// Step function input record
+    /// Predict function input record
     pub inputs: RecordDef,
-    /// Step function output record
+    /// Predict function output record
     pub outputs: RecordDef,
 }
 

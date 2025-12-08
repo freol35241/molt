@@ -5,6 +5,7 @@
 
 pub mod codegen;
 pub mod compile;
+pub mod glue;
 pub mod interface;
 pub mod manifest;
 pub mod wit;

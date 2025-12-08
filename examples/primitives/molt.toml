@@ -1,10 +1,14 @@
 [package]
 name = "primitives-example"
 version = "0.1.0"
+description = "Demonstrates all WIT primitive types"
 
 [models.types]
 wit = "wit/types.wit"
 world = "types-model"
+source = "src/types.rs"
+struct = "TypesModel"
+outputs = "TypesOutputs"
 
 [targets.python]
 package_name = "primitives_example"

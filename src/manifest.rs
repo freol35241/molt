@@ -46,6 +46,13 @@ pub struct ModelConfig {
     pub wit: PathBuf,
     /// World name in the WIT file
     pub world: String,
+    /// Path to Rust source file containing the implementation
+    pub source: PathBuf,
+    /// Name of the struct implementing the model
+    #[serde(rename = "struct")]
+    pub struct_name: String,
+    /// Name of the outputs struct in the user's code
+    pub outputs: String,
 }
 
 /// Configuration for a target language.
@@ -97,6 +104,15 @@ impl MoltManifest {
             if model.world.is_empty() {
                 anyhow::bail!("Model '{}' must specify a world", name);
             }
+            if model.source.as_os_str().is_empty() {
+                anyhow::bail!("Model '{}' must specify a source file", name);
+            }
+            if model.struct_name.is_empty() {
+                anyhow::bail!("Model '{}' must specify a struct name", name);
+            }
+            if model.outputs.is_empty() {
+                anyhow::bail!("Model '{}' must specify an outputs struct name", name);
+            }
         }
 
         // Validate target-specific options if output_dir is specified
@@ -144,9 +160,19 @@ name = "physics-models"
 version = "0.1.0"
 description = "Aerodynamic and hydrodynamic models"
 
-[models]
-drag = { wit = "wit/drag.wit", world = "drag-model" }
-hull = { wit = "wit/hull.wit", world = "hull-model" }
+[models.drag]
+wit = "wit/drag.wit"
+world = "drag-model"
+source = "src/drag.rs"
+struct = "DragModel"
+outputs = "DragOutputs"
+
+[models.hull]
+wit = "wit/hull.wit"
+world = "hull-model"
+source = "src/hull.rs"
+struct = "HullModel"
+outputs = "HullOutputs"
 
 [targets.python]
 package_name = "physics_models"
@@ -161,6 +187,7 @@ output_dir = "dist/rust"
         assert_eq!(manifest.models.len(), 2);
         assert!(manifest.models.contains_key("drag"));
         assert!(manifest.models.contains_key("hull"));
+        assert_eq!(manifest.models.get("drag").unwrap().struct_name, "DragModel");
         assert_eq!(manifest.targets.len(), 2);
     }
 

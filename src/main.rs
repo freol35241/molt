@@ -4,10 +4,11 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use molt::codegen;
 use molt::compile;
+use molt::glue;
 use molt::manifest::MoltManifest;
 use molt::wit;
 
@@ -21,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Build model packages for target languages
+    /// Build model packages (runs generate, compile, pack)
     Build {
         /// Path to molt.toml manifest (defaults to current directory)
         #[arg(short, long)]
@@ -34,6 +35,24 @@ enum Commands {
         /// Skip WASM compilation (use existing .wasm file)
         #[arg(long)]
         skip_compile: bool,
+    },
+
+    /// Generate glue code in molt-gen/
+    Generate {
+        /// Path to molt.toml manifest (defaults to current directory)
+        #[arg(short, long)]
+        manifest: Option<PathBuf>,
+    },
+
+    /// Generate output packages from compiled WASM
+    Pack {
+        /// Path to molt.toml manifest (defaults to current directory)
+        #[arg(short, long)]
+        manifest: Option<PathBuf>,
+
+        /// Target language to pack (if omitted, packs all targets)
+        #[arg(short, long)]
+        target: Option<String>,
     },
 
     /// Initialize a new molt project
@@ -63,6 +82,8 @@ fn main() -> Result<()> {
             target,
             skip_compile,
         } => cmd_build(manifest, target, skip_compile),
+        Commands::Generate { manifest } => cmd_generate(manifest),
+        Commands::Pack { manifest, target } => cmd_pack(manifest, target),
         Commands::Init { name, path } => cmd_init(name, path),
         Commands::Check { manifest } => cmd_check(manifest),
     }
@@ -86,6 +107,88 @@ fn cmd_build(
 
     // Parse WIT files and extract model interfaces
     println!("Parsing WIT interfaces...");
+    let models = parse_models(&manifest, &project_dir)?;
+
+    // Step 1: Generate glue code
+    println!("Generating glue code...");
+    let glue_content = glue::generate_glue(&manifest, &models, &project_dir)?;
+    glue::write_glue(&project_dir, &glue_content)?;
+    println!("  Generated molt-gen/lib.rs");
+
+    // Step 2: Compile to WASM
+    let wasm_bytes = if skip_compile {
+        println!("Skipping WASM compilation (--skip-compile)");
+        compile::find_existing_wasm(&project_dir, &manifest)?
+    } else {
+        println!("Compiling to WASM...");
+        compile::compile_to_wasm(&project_dir)?
+    };
+
+    // Step 3: Generate packages
+    generate_packages(&manifest, &models, &wasm_bytes, &project_dir, target)?;
+
+    println!("Build complete!");
+    Ok(())
+}
+
+fn cmd_generate(manifest_path: Option<PathBuf>) -> Result<()> {
+    let manifest_path = manifest_path.unwrap_or_else(|| PathBuf::from("molt.toml"));
+    let project_dir = manifest_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+
+    println!("Loading manifest from {:?}", manifest_path);
+    let manifest = MoltManifest::load(&manifest_path)
+        .with_context(|| format!("Failed to load manifest from {:?}", manifest_path))?;
+
+    // Parse WIT files and extract model interfaces
+    println!("Parsing WIT interfaces...");
+    let models = parse_models(&manifest, &project_dir)?;
+
+    // Generate glue code
+    println!("Generating glue code...");
+    let glue_content = glue::generate_glue(&manifest, &models, &project_dir)?;
+    glue::write_glue(&project_dir, &glue_content)?;
+    println!("  Generated molt-gen/lib.rs");
+
+    println!("Generate complete!");
+    Ok(())
+}
+
+fn cmd_pack(manifest_path: Option<PathBuf>, target: Option<String>) -> Result<()> {
+    let manifest_path = manifest_path.unwrap_or_else(|| PathBuf::from("molt.toml"));
+    let project_dir = manifest_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+
+    println!("Loading manifest from {:?}", manifest_path);
+    let manifest = MoltManifest::load(&manifest_path)
+        .with_context(|| format!("Failed to load manifest from {:?}", manifest_path))?;
+
+    // Parse WIT files and extract model interfaces
+    println!("Parsing WIT interfaces...");
+    let models = parse_models(&manifest, &project_dir)?;
+
+    // Find existing WASM
+    println!("Looking for compiled WASM...");
+    let wasm_bytes = compile::find_existing_wasm(&project_dir, &manifest)?;
+
+    // Generate packages
+    generate_packages(&manifest, &models, &wasm_bytes, &project_dir, target)?;
+
+    println!("Pack complete!");
+    Ok(())
+}
+
+/// Parse all model interfaces from WIT files.
+fn parse_models(
+    manifest: &MoltManifest,
+    project_dir: &Path,
+) -> Result<Vec<molt::ModelInterface>> {
     let mut models = Vec::new();
     for (name, model_config) in &manifest.models {
         let wit_path = project_dir.join(&model_config.wit);
@@ -94,18 +197,17 @@ fn cmd_build(
             .with_context(|| format!("Failed to parse WIT file {:?}", wit_path))?;
         models.push(model_interface);
     }
+    Ok(models)
+}
 
-    // Compile to WASM
-    let wasm_bytes = if skip_compile {
-        println!("Skipping WASM compilation (--skip-compile)");
-        // Try to find existing WASM file
-        compile::find_existing_wasm(&project_dir, &manifest)?
-    } else {
-        println!("Compiling to WASM...");
-        compile::compile_to_wasm(&project_dir)?
-    };
-
-    // Generate packages for each target
+/// Generate packages for specified targets.
+fn generate_packages(
+    manifest: &MoltManifest,
+    models: &[molt::ModelInterface],
+    wasm_bytes: &std::collections::HashMap<String, Vec<u8>>,
+    project_dir: &Path,
+    target: Option<String>,
+) -> Result<()> {
     let targets_to_build: Vec<_> = if let Some(ref t) = target {
         manifest
             .targets
@@ -135,9 +237,9 @@ fn cmd_build(
         match target_name.as_str() {
             "python" => {
                 codegen::python::generate_python_package(
-                    &manifest,
-                    &models,
-                    &wasm_bytes,
+                    manifest,
+                    models,
+                    wasm_bytes,
                     &output_dir,
                     target_config,
                 )?;
@@ -154,7 +256,6 @@ fn cmd_build(
         }
     }
 
-    println!("Build complete!");
     Ok(())
 }
 
@@ -171,26 +272,33 @@ fn cmd_init(name: String, path: Option<PathBuf>) -> Result<()> {
     std::fs::create_dir_all(project_dir.join("src"))?;
     std::fs::create_dir_all(project_dir.join("wit"))?;
 
-    // Create molt.toml
+    let ns = name.replace('-', "");
+    let name_snake = name.replace('-', "_");
+
+    // Create molt.toml with new fields
     let molt_toml = format!(
         r#"[package]
 name = "{name}"
 version = "0.1.0"
 description = "A molt model package"
 
-[models]
-example = {{ wit = "wit/example.wit", world = "example-model" }}
+[models.example]
+wit = "wit/example.wit"
+world = "example-model"
+source = "src/example.rs"
+struct = "ExampleModel"
+outputs = "ExampleOutputs"
 
 [targets.python]
 package_name = "{name_snake}"
 output_dir = "dist/python"
 "#,
         name = name,
-        name_snake = name.replace('-', "_")
+        name_snake = name_snake
     );
     std::fs::write(project_dir.join("molt.toml"), molt_toml)?;
 
-    // Create example WIT
+    // Create example WIT with predict method and result type
     let wit_content = format!(
         r#"package {ns}:models;
 
@@ -204,12 +312,12 @@ interface example {{
     }}
 
     record outputs {{
-        result: float64,
+        scaled: float64,
     }}
 
     resource model {{
         constructor(p: params);
-        step: func(i: inputs) -> outputs;
+        predict: func(i: inputs) -> result<outputs, string>;
     }}
 }}
 
@@ -217,11 +325,11 @@ world example-model {{
     export example;
 }}
 "#,
-        ns = name.replace('-', "")
+        ns = ns
     );
     std::fs::write(project_dir.join("wit/example.wit"), wit_content)?;
 
-    // Create Cargo.toml
+    // Create Cargo.toml pointing to molt-gen/lib.rs
     let cargo_toml = format!(
         r#"[package]
 name = "{name}"
@@ -229,6 +337,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+path = "molt-gen/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -241,47 +350,59 @@ package = "{ns}:models"
 path = "wit"
 "#,
         name = name,
-        ns = name.replace('-', "")
+        ns = ns
     );
     std::fs::write(project_dir.join("Cargo.toml"), cargo_toml)?;
 
-    // Create lib.rs
-    let lib_rs = r#"wit_bindgen::generate!({
-    world: "example-model",
-});
-
-use exports::example::{Guest, GuestModel, Inputs, Outputs, Params};
+    // Create pure Rust implementation (no wit-bindgen macros)
+    let example_rs = r#"//! Example model implementation.
+//!
+//! This is pure Rust - no wit-bindgen macros needed.
+//! molt generates the glue code in molt-gen/lib.rs.
 
 pub struct ExampleModel {
-    params: Params,
+    coefficient: f64,
 }
 
-impl GuestModel for ExampleModel {
-    fn new(p: Params) -> Self {
-        Self { params: p }
-    }
-
-    fn step(&self, i: Inputs) -> Outputs {
-        Outputs {
-            result: i.value * self.params.coefficient,
+impl ExampleModel {
+    /// Create a new example model.
+    pub fn new(coefficient: f64) -> Result<Self, String> {
+        if coefficient == 0.0 {
+            return Err("coefficient cannot be zero".to_string());
         }
+        Ok(Self { coefficient })
+    }
+
+    /// Predict the scaled value.
+    pub fn predict(&self, value: f64) -> Result<ExampleOutputs, String> {
+        Ok(ExampleOutputs {
+            scaled: value * self.coefficient,
+        })
     }
 }
 
-pub struct Example;
-
-impl Guest for Example {
-    type Model = ExampleModel;
+pub struct ExampleOutputs {
+    pub scaled: f64,
 }
-
-export!(Example);
 "#;
-    std::fs::write(project_dir.join("src/lib.rs"), lib_rs)?;
+    std::fs::write(project_dir.join("src/example.rs"), example_rs)?;
+
+    // Create .gitignore
+    let gitignore = r#"# Generated by molt
+molt-gen/
+dist/
+target/
+"#;
+    std::fs::write(project_dir.join(".gitignore"), gitignore)?;
 
     println!("Created project at {:?}", project_dir);
+    println!("\nProject structure:");
+    println!("  src/example.rs   - Your pure Rust implementation");
+    println!("  wit/example.wit  - WIT interface definition");
+    println!("  molt.toml        - MOLT configuration");
+    println!("  molt-gen/        - Generated glue code (git-ignored)");
     println!("\nNext steps:");
     println!("  cd {}", project_dir.display());
-    println!("  # Edit wit/example.wit and src/lib.rs");
     println!("  molt build");
 
     Ok(())

@@ -1,14 +1,21 @@
 [package]
 name = "multi-model-example"
 version = "0.1.0"
+description = "Demonstrates multiple models in one package"
 
 [models.adder]
 wit = "wit/math.wit"
 world = "math-models"
+source = "src/adder.rs"
+struct = "AdderModel"
+outputs = "AdderOutputs"
 
 [models.multiplier]
 wit = "wit/math.wit"
 world = "math-models"
+source = "src/multiplier.rs"
+struct = "MultiplierModel"
+outputs = "MultiplierOutputs"
 
 [targets.python]
 package_name = "multi_model_example"

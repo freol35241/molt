@@ -25,7 +25,7 @@ interface adder {
     /// The adder model resource.
     resource model {
         constructor(p: params);
-        step: func(i: inputs) -> outputs;
+        predict: func(i: inputs) -> result<outputs, string>;
     }
 }
 
@@ -52,7 +52,7 @@ interface multiplier {
     /// The multiplier model resource.
     resource model {
         constructor(p: params);
-        step: func(i: inputs) -> outputs;
+        predict: func(i: inputs) -> result<outputs, string>;
     }
 }
 

@@ -4,7 +4,7 @@ use crate::interface::{FieldDef, ModelInterface, RecordDef, WitType};
 use anyhow::{Context, Result};
 use heck::ToSnakeCase;
 use std::path::Path;
-use wit_parser::{Resolve, Type, TypeDefKind, UnresolvedPackageGroup};
+use wit_parser::{Resolve, Results, Type, TypeDefKind, UnresolvedPackageGroup};
 
 /// Parse a WIT file and extract the model interface for a given world.
 pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result<ModelInterface> {
@@ -75,7 +75,7 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
     }
 
     // If we didn't find records by those names, look for the resource's methods
-    // to infer the types from constructor and step signatures
+    // to infer the types from constructor and predict signatures
     if params_record.is_none() || inputs_record.is_none() || outputs_record.is_none() {
         // Try to find records from the resource definition
         for (_type_name, type_id) in &interface.types {
@@ -83,7 +83,7 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
             if let TypeDefKind::Resource = &type_def.kind {
                 // This is the model resource, check its functions
                 for (func_name, func) in &interface.functions {
-                    // Look at constructor and step method
+                    // Look at constructor and predict method
                     if func_name.contains("constructor") && params_record.is_none() {
                         // Constructor parameter should be the params type
                         if let Some((_name, param_type)) = func.params.first() {
@@ -94,8 +94,11 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                             }
                         }
                     }
-                    if func_name.ends_with(".step") || func_name == "step" {
-                        // step(inputs) -> outputs
+                    // Support both 'predict' (new convention) and 'step' (legacy)
+                    if func_name.ends_with(".predict") || func_name == "predict"
+                        || func_name.ends_with(".step") || func_name == "step"
+                    {
+                        // predict(inputs) -> result<outputs, string> or outputs
                         if inputs_record.is_none() {
                             if let Some((_name, input_type)) =
                                 func.params.iter().find(|(n, _)| n != "self")
@@ -108,28 +111,8 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                             }
                         }
                         if outputs_record.is_none() {
-                            match &func.results {
-                                wit_parser::Results::Named(named) => {
-                                    if let Some((_, output_type)) = named.first() {
-                                        if let Some(record) = try_extract_record_from_type(
-                                            &resolve,
-                                            output_type,
-                                            "Outputs",
-                                        ) {
-                                            outputs_record = Some(record);
-                                        }
-                                    }
-                                }
-                                wit_parser::Results::Anon(output_type) => {
-                                    if let Some(record) = try_extract_record_from_type(
-                                        &resolve,
-                                        output_type,
-                                        "Outputs",
-                                    ) {
-                                        outputs_record = Some(record);
-                                    }
-                                }
-                            }
+                            // Extract outputs from result type or plain return type
+                            outputs_record = extract_outputs_from_results(&resolve, &func.results);
                         }
                     }
                 }
@@ -145,13 +128,55 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
     let outputs = outputs_record
         .ok_or_else(|| anyhow::anyhow!("Could not find 'outputs' record in interface"))?;
 
+    // Build export path: package/interface/model
+    let export_path = format!("{}/{}/model", package_name, model_name);
+
     Ok(ModelInterface {
         name: model_name.to_string(),
         package: package_name,
+        world: world_name.to_string(),
+        export_path,
         params,
         inputs,
         outputs,
     })
+}
+
+/// Extract outputs from function results, handling both plain types and result<T, E>
+fn extract_outputs_from_results(resolve: &Resolve, results: &Results) -> Option<RecordDef> {
+    match results {
+        Results::Named(named) => {
+            if let Some((_, output_type)) = named.first() {
+                extract_outputs_from_type(resolve, output_type)
+            } else {
+                None
+            }
+        }
+        Results::Anon(output_type) => extract_outputs_from_type(resolve, output_type),
+    }
+}
+
+/// Extract outputs from a type, unwrapping result<T, E> if present
+fn extract_outputs_from_type(resolve: &Resolve, ty: &Type) -> Option<RecordDef> {
+    match ty {
+        Type::Id(id) => {
+            let type_def = &resolve.types[*id];
+            match &type_def.kind {
+                // Handle result<outputs, string>
+                TypeDefKind::Result(result) => {
+                    if let Some(ok_type) = &result.ok {
+                        try_extract_record_from_type(resolve, ok_type, "Outputs")
+                    } else {
+                        None
+                    }
+                }
+                // Handle plain record type
+                TypeDefKind::Record(_) => extract_record(resolve, type_def, "Outputs").ok(),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn extract_record(
@@ -286,6 +311,8 @@ world example-model {
 
         assert_eq!(model.name, "example");
         assert_eq!(model.package, "test:models");
+        assert_eq!(model.world, "example-model");
+        assert_eq!(model.export_path, "test:models/example/model");
         assert_eq!(model.params.fields.len(), 1);
         assert_eq!(model.params.fields[0].name, "coefficient");
         assert_eq!(model.inputs.fields.len(), 1);
@@ -331,6 +358,8 @@ world drag-model {
 
         assert_eq!(model.name, "drag");
         assert_eq!(model.package, "myorg:physics");
+        assert_eq!(model.world, "drag-model");
+        assert_eq!(model.export_path, "myorg:physics/drag/model");
 
         // Params
         assert_eq!(model.params.fields.len(), 2);
@@ -348,5 +377,50 @@ world drag-model {
         assert_eq!(model.outputs.fields[0].name, "drag_force");
         assert_eq!(model.outputs.fields[0].wit_name, "drag-force");
         assert_eq!(model.outputs.fields[1].name, "dynamic_pressure");
+    }
+
+    #[test]
+    fn test_parse_predict_with_result() {
+        // Test the new convention: predict returns result<outputs, string>
+        let wit_content = r#"
+package myorg:physics;
+
+interface drag {
+    record params {
+        area: f64,
+        cd: f64,
+    }
+
+    record inputs {
+        rho: f64,
+        velocity: f64,
+    }
+
+    record outputs {
+        drag-force: f64,
+    }
+
+    resource model {
+        constructor(p: params);
+        predict: func(i: inputs) -> result<outputs, string>;
+    }
+}
+
+world drag-model {
+    export drag;
+}
+"#;
+
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(wit_content.as_bytes()).unwrap();
+
+        let model = parse_wit_file(file.path(), "drag-model", "drag").unwrap();
+
+        assert_eq!(model.name, "drag");
+        assert_eq!(model.package, "myorg:physics");
+        assert_eq!(model.params.fields.len(), 2);
+        assert_eq!(model.inputs.fields.len(), 2);
+        assert_eq!(model.outputs.fields.len(), 1);
+        assert_eq!(model.outputs.fields[0].name, "drag_force");
     }
 }

@@ -9,13 +9,13 @@ interface scale {
         factor: f64,
     }
 
-    /// Model inputs - provided each step.
+    /// Model inputs - provided each prediction.
     record inputs {
         /// Value to be scaled.
         value: f64,
     }
 
-    /// Model outputs - returned each step.
+    /// Model outputs - returned from prediction.
     record outputs {
         /// The scaled value (value * factor).
         scaled: f64,
@@ -26,8 +26,8 @@ interface scale {
         /// Create a new model with the given parameters.
         constructor(p: params);
 
-        /// Run one step of the model.
-        step: func(i: inputs) -> outputs;
+        /// Run one prediction step.
+        predict: func(i: inputs) -> result<outputs, string>;
     }
 }
 

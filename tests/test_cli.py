@@ -83,7 +83,18 @@ class TestMoltBuild:
         example_copy = tmp_path / "minimal"
         shutil.copytree(MINIMAL_DIR, example_copy)
 
-        # Step 1: Compile WASM using cargo component directly
+        # Step 1: Generate glue code
+        result = subprocess.run(
+            [str(molt_binary), "generate"],
+            cwd=example_copy,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=get_env_with_cargo(),
+        )
+        assert result.returncode == 0, f"molt generate failed:\n{result.stdout}\n{result.stderr}"
+
+        # Step 2: Compile WASM using cargo component
         result = subprocess.run(
             ["cargo", "component", "build", "--release"],
             cwd=example_copy,
@@ -94,7 +105,7 @@ class TestMoltBuild:
         )
         assert result.returncode == 0, f"cargo component build failed:\n{result.stdout}\n{result.stderr}"
 
-        # Step 2: Run molt build with --skip-compile
+        # Step 3: Run molt build with --skip-compile
         result = subprocess.run(
             [str(molt_binary), "build", "--skip-compile"],
             cwd=example_copy,
@@ -139,7 +150,18 @@ class TestMoltBuild:
         example_copy = tmp_path / "minimal"
         shutil.copytree(MINIMAL_DIR, example_copy)
 
-        # Step 1: Compile WASM using cargo component directly
+        # Step 1: Generate glue code
+        result = subprocess.run(
+            [str(molt_binary), "generate"],
+            cwd=example_copy,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=get_env_with_cargo(),
+        )
+        assert result.returncode == 0, f"molt generate failed:\n{result.stderr}"
+
+        # Step 2: Compile WASM using cargo component
         result = subprocess.run(
             ["cargo", "component", "build", "--release"],
             cwd=example_copy,
@@ -150,7 +172,7 @@ class TestMoltBuild:
         )
         assert result.returncode == 0, f"cargo component build failed:\n{result.stderr}"
 
-        # Step 2: Run molt build with --skip-compile and --target
+        # Step 3: Run molt build with --skip-compile and --target
         result = subprocess.run(
             [str(molt_binary), "build", "--skip-compile", "--target", "python"],
             cwd=example_copy,
@@ -184,7 +206,7 @@ class TestMoltInit:
         expected_files = [
             "molt.toml",
             "Cargo.toml",
-            "src/lib.rs",
+            "src/example.rs",
             "wit/example.wit",
         ]
 

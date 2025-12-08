@@ -6,7 +6,7 @@
 //! - Creates adapter structs that implement the WIT guest traits
 
 use crate::interface::ModelInterface;
-use crate::manifest::{MoltManifest, ModelConfig};
+use crate::manifest::{ModelConfig, MoltManifest};
 use anyhow::{Context, Result};
 use heck::{ToPascalCase, ToSnakeCase};
 use std::collections::HashMap;
@@ -43,33 +43,32 @@ pub fn generate_glue(
             module_name = module_name
         ));
     }
-    out.push_str("\n");
+    out.push('\n');
 
     // Generate the wit_bindgen! macro invocation
-    out.push_str(&generate_wit_bindgen_macro(manifest, models, &config_map));
-    out.push_str("\n");
+    out.push_str(&generate_wit_bindgen_macro(models));
+    out.push('\n');
 
     // Generate use statements
     out.push_str(&generate_use_statements(models));
-    out.push_str("\n");
+    out.push('\n');
 
     // Generate adapter structs for each model
     for model in models {
         if let Some(config) = config_map.get(model.name.as_str()) {
             out.push_str(&generate_adapter(model, config));
-            out.push_str("\n");
+            out.push('\n');
         }
     }
+
+    // Generate export! macro
+    out.push_str(&generate_export_macro(models, &config_map));
 
     Ok(out)
 }
 
 /// Generate the wit_bindgen::generate! macro call.
-fn generate_wit_bindgen_macro(
-    _manifest: &MoltManifest,
-    models: &[ModelInterface],
-    config_map: &HashMap<&str, &ModelConfig>,
-) -> String {
+fn generate_wit_bindgen_macro(models: &[ModelInterface]) -> String {
     let mut out = String::new();
 
     // We need to determine the world name - for now, use the first model's world
@@ -82,19 +81,6 @@ fn generate_wit_bindgen_macro(
     out.push_str("// Generate WIT bindings\n");
     out.push_str("wit_bindgen::generate!({\n");
     out.push_str(&format!("    world: \"{}\",\n", world));
-    out.push_str("    exports: {\n");
-
-    for model in models {
-        if let Some(_config) = config_map.get(model.name.as_str()) {
-            let adapter_name = format!("{}ModelAdapter", model.name.to_pascal_case());
-            out.push_str(&format!(
-                "        \"{}\": {},\n",
-                model.export_path, adapter_name
-            ));
-        }
-    }
-
-    out.push_str("    },\n");
     out.push_str("});\n");
 
     out
@@ -114,6 +100,7 @@ fn generate_use_statements(models: &[ModelInterface]) -> String {
 
         out.push_str(&format!(
             "use exports::{}::{}::{{
+    Guest as {pascal_name}Guest,
     GuestModel as Guest{pascal_name}Model,
     Inputs as {pascal_name}Inputs,
     Outputs as {pascal_name}Outputs,
@@ -134,29 +121,34 @@ fn generate_adapter(model: &ModelInterface, config: &ModelConfig) -> String {
     let snake_name = model.name.to_snake_case();
     let pascal_name = model.name.to_pascal_case();
     let adapter_name = format!("{}ModelAdapter", pascal_name);
+    let guest_struct_name = format!("{}GuestImpl", pascal_name);
     let user_struct = &config.struct_name;
-    let _user_outputs = &config.outputs; // Reserved for future use
 
-    out.push_str(&format!(
-        "// ============================================================================\n"
-    ));
+    out.push_str(
+        "// ============================================================================\n",
+    );
     out.push_str(&format!("// {} Model Adapter\n", pascal_name));
-    out.push_str(&format!(
-        "// ============================================================================\n\n"
-    ));
+    out.push_str(
+        "// ============================================================================\n\n",
+    );
 
+    // Generate the adapter struct that holds the user implementation
     out.push_str(&format!("pub struct {} {{\n", adapter_name));
-    out.push_str(&format!("    inner: {}_impl::{},\n", snake_name, user_struct));
+    out.push_str(&format!(
+        "    inner: {}_impl::{},\n",
+        snake_name, user_struct
+    ));
     out.push_str("}\n\n");
 
+    // Implement GuestModel for the adapter
     out.push_str(&format!(
         "impl Guest{}Model for {} {{\n",
         pascal_name, adapter_name
     ));
 
-    // Constructor
+    // Constructor - WIT constructors can't return Result, so we panic on error
     out.push_str(&format!(
-        "    fn new(p: {}Params) -> Result<Self, String> {{\n",
+        "    fn new(p: {}Params) -> Self {{\n",
         pascal_name
     ));
 
@@ -169,12 +161,13 @@ fn generate_adapter(model: &ModelInterface, config: &ModelConfig) -> String {
         .collect();
 
     out.push_str(&format!(
-        "        let inner = {}_impl::{}::new({})?;\n",
+        "        let inner = {}_impl::{}::new({})\n",
         snake_name,
         user_struct,
         param_args.join(", ")
     ));
-    out.push_str("        Ok(Self { inner })\n");
+    out.push_str("            .expect(\"Model construction failed\");\n");
+    out.push_str("        Self { inner }\n");
     out.push_str("    }\n\n");
 
     // Predict method
@@ -208,7 +201,38 @@ fn generate_adapter(model: &ModelInterface, config: &ModelConfig) -> String {
     out.push_str(&output_fields.join("\n"));
     out.push_str("\n        })\n");
     out.push_str("    }\n");
+    out.push_str("}\n\n");
+
+    // Generate the Guest impl struct (marker struct for wit_bindgen)
+    out.push_str(&format!("pub struct {};\n\n", guest_struct_name));
+
+    out.push_str(&format!(
+        "impl {}Guest for {} {{\n",
+        pascal_name, guest_struct_name
+    ));
+    out.push_str(&format!("    type Model = {};\n", adapter_name));
     out.push_str("}\n");
+
+    out
+}
+
+/// Generate the export! macro call.
+fn generate_export_macro(
+    models: &[ModelInterface],
+    config_map: &HashMap<&str, &ModelConfig>,
+) -> String {
+    let mut out = String::new();
+
+    let exports: Vec<String> = models
+        .iter()
+        .filter(|m| config_map.contains_key(m.name.as_str()))
+        .map(|m| format!("{}GuestImpl", m.name.to_pascal_case()))
+        .collect();
+
+    if !exports.is_empty() {
+        out.push_str("// Export the guest implementations\n");
+        out.push_str(&format!("export!({});\n", exports.join(", ")));
+    }
 
     out
 }
@@ -300,14 +324,12 @@ mod tests {
             },
             outputs: RecordDef {
                 name: "Outputs".to_string(),
-                fields: vec![
-                    FieldDef {
-                        name: "drag_force".to_string(),
-                        wit_name: "drag-force".to_string(),
-                        ty: WitType::Float64,
-                        docs: None,
-                    },
-                ],
+                fields: vec![FieldDef {
+                    name: "drag_force".to_string(),
+                    wit_name: "drag-force".to_string(),
+                    ty: WitType::Float64,
+                    docs: None,
+                }],
             },
         }
     }
@@ -325,10 +347,12 @@ mod tests {
         assert!(glue.contains("#[path = \"../src/drag.rs\"]"));
         assert!(glue.contains("mod drag_impl;"));
         assert!(glue.contains("wit_bindgen::generate!"));
-        assert!(glue.contains("\"myorg:physics/drag/model\": DragModelAdapter"));
         assert!(glue.contains("pub struct DragModelAdapter"));
         assert!(glue.contains("impl GuestDragModel for DragModelAdapter"));
-        assert!(glue.contains("fn new(p: DragParams)"));
+        assert!(glue.contains("fn new(p: DragParams) -> Self"));
         assert!(glue.contains("fn predict(&self, i: DragInputs)"));
+        assert!(glue.contains("pub struct DragGuestImpl"));
+        assert!(glue.contains("impl DragGuest for DragGuestImpl"));
+        assert!(glue.contains("export!(DragGuestImpl)"));
     }
 }

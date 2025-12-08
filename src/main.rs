@@ -185,10 +185,7 @@ fn cmd_pack(manifest_path: Option<PathBuf>, target: Option<String>) -> Result<()
 }
 
 /// Parse all model interfaces from WIT files.
-fn parse_models(
-    manifest: &MoltManifest,
-    project_dir: &Path,
-) -> Result<Vec<molt::ModelInterface>> {
+fn parse_models(manifest: &MoltManifest, project_dir: &Path) -> Result<Vec<molt::ModelInterface>> {
     let mut models = Vec::new();
     for (name, model_config) in &manifest.models {
         let wit_path = project_dir.join(&model_config.wit);

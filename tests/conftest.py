@@ -76,8 +76,19 @@ def built_minimal_example(molt_binary: Path, cargo_component_available: bool, tm
     example_copy = build_dir / "minimal"
     shutil.copytree(MINIMAL_DIR, example_copy)
 
-    # Step 1: Compile WASM using cargo component directly
-    # (This avoids issues with nested subprocess spawning)
+    # Step 1: Generate glue code with molt generate
+    result = subprocess.run(
+        [str(molt_binary), "generate"],
+        cwd=example_copy,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=get_env_with_cargo(),
+    )
+    if result.returncode != 0:
+        pytest.fail(f"molt generate failed:\nstdout: {result.stdout}\nstderr: {result.stderr}")
+
+    # Step 2: Compile WASM using cargo component
     result = subprocess.run(
         ["cargo", "component", "build", "--release"],
         cwd=example_copy,
@@ -89,7 +100,7 @@ def built_minimal_example(molt_binary: Path, cargo_component_available: bool, tm
     if result.returncode != 0:
         pytest.fail(f"cargo component build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}")
 
-    # Step 2: Run molt build with --skip-compile to generate Python package
+    # Step 3: Run molt build with --skip-compile to generate Python package
     result = subprocess.run(
         [str(molt_binary), "build", "--skip-compile"],
         cwd=example_copy,

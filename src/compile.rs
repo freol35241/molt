@@ -10,7 +10,9 @@ use std::process::Command;
 fn find_cargo() -> Result<std::path::PathBuf> {
     // Try to find cargo in common locations (including actual rustup toolchain paths)
     let paths = [
-        std::path::PathBuf::from("/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"),
+        std::path::PathBuf::from(
+            "/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+        ),
         std::path::PathBuf::from("/root/.cargo/bin/cargo"),
         std::path::PathBuf::from("/usr/local/cargo/bin/cargo"),
         std::path::PathBuf::from("/usr/bin/cargo"),
@@ -45,7 +47,8 @@ fn get_cargo_env() -> Vec<(String, String)> {
         .map(|h| h.join(".cargo").join("bin"))
         .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo/bin"));
 
-    let path = env.iter()
+    let path = env
+        .iter()
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| v.clone())
         .unwrap_or_default();
@@ -62,7 +65,10 @@ fn get_cargo_env() -> Vec<(String, String)> {
             .map(|h| h.join(".rustup"))
             .unwrap_or_else(|| std::path::PathBuf::from("/root/.rustup"));
         if rustup_home.exists() {
-            env.push(("RUSTUP_HOME".to_string(), rustup_home.to_string_lossy().to_string()));
+            env.push((
+                "RUSTUP_HOME".to_string(),
+                rustup_home.to_string_lossy().to_string(),
+            ));
         }
     }
 
@@ -72,7 +78,10 @@ fn get_cargo_env() -> Vec<(String, String)> {
             .map(|h| h.join(".cargo"))
             .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo"));
         if cargo_home.exists() {
-            env.push(("CARGO_HOME".to_string(), cargo_home.to_string_lossy().to_string()));
+            env.push((
+                "CARGO_HOME".to_string(),
+                cargo_home.to_string_lossy().to_string(),
+            ));
         }
     }
 

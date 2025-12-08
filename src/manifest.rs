@@ -116,7 +116,7 @@ impl MoltManifest {
         }
 
         // Validate target-specific options if output_dir is specified
-        for (_name, target) in &self.targets {
+        for target in self.targets.values() {
             if let Some(ref dir) = target.output_dir {
                 if dir.as_os_str().is_empty() {
                     // Empty string output_dir is treated as None (use default)
@@ -187,7 +187,10 @@ output_dir = "dist/rust"
         assert_eq!(manifest.models.len(), 2);
         assert!(manifest.models.contains_key("drag"));
         assert!(manifest.models.contains_key("hull"));
-        assert_eq!(manifest.models.get("drag").unwrap().struct_name, "DragModel");
+        assert_eq!(
+            manifest.models.get("drag").unwrap().struct_name,
+            "DragModel"
+        );
         assert_eq!(manifest.targets.len(), 2);
     }
 

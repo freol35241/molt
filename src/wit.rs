@@ -95,8 +95,10 @@ pub fn parse_wit_file(path: &Path, world_name: &str, model_name: &str) -> Result
                         }
                     }
                     // Support both 'predict' (new convention) and 'step' (legacy)
-                    if func_name.ends_with(".predict") || func_name == "predict"
-                        || func_name.ends_with(".step") || func_name == "step"
+                    if func_name.ends_with(".predict")
+                        || func_name == "predict"
+                        || func_name.ends_with(".step")
+                        || func_name == "step"
                     {
                         // predict(inputs) -> result<outputs, string> or outputs
                         if inputs_record.is_none() {

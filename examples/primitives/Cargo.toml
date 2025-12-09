@@ -1,0 +1,17 @@
+[package]
+name = "primitives-example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "molt-gen/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.36"
+
+[package.metadata.component]
+package = "example:primitives"
+
+[package.metadata.component.target]
+path = "wit"

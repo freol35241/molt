@@ -1,0 +1,14 @@
+[package]
+name = "collections-example"
+version = "0.1.0"
+description = "Demonstrates list and option types"
+
+[models.aggregate]
+wit = "wit/aggregate.wit"
+world = "aggregate-model"
+source = "src/aggregate.rs"
+struct = "AggregateModel"
+outputs = "AggregateOutputs"
+
+[targets.python]
+package_name = "collections_example"

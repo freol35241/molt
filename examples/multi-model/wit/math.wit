@@ -1,0 +1,62 @@
+/// Multi-model example: demonstrates multiple models in one package.
+/// Shows how to define multiple interfaces with their own models.
+package example:math;
+
+/// Adder model: adds a constant to input values.
+interface adder {
+    /// Adder parameters.
+    record params {
+        /// Value to add to inputs.
+        addend: f64,
+    }
+
+    /// Adder inputs.
+    record inputs {
+        /// Value to be added to.
+        value: f64,
+    }
+
+    /// Adder outputs.
+    record outputs {
+        /// Sum of input and addend.
+        sum: f64,
+    }
+
+    /// The adder model resource.
+    resource model {
+        constructor(p: params);
+        predict: func(i: inputs) -> result<outputs, string>;
+    }
+}
+
+/// Multiplier model: multiplies input values by a constant.
+interface multiplier {
+    /// Multiplier parameters.
+    record params {
+        /// Factor to multiply inputs by.
+        factor: f64,
+    }
+
+    /// Multiplier inputs.
+    record inputs {
+        /// Value to be multiplied.
+        value: f64,
+    }
+
+    /// Multiplier outputs.
+    record outputs {
+        /// Product of input and factor.
+        product: f64,
+    }
+
+    /// The multiplier model resource.
+    resource model {
+        constructor(p: params);
+        predict: func(i: inputs) -> result<outputs, string>;
+    }
+}
+
+world math-models {
+    export adder;
+    export multiplier;
+}

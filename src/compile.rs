@@ -7,63 +7,126 @@ use std::path::Path;
 use std::process::Command;
 
 /// Find the cargo binary path.
+///
+/// Uses a cross-platform approach:
+/// 1. Try `which`/`where` command to find cargo in PATH
+/// 2. Check standard installation locations based on user's home directory
+/// 3. Fall back to bare "cargo" and let the OS resolve it
 fn find_cargo() -> Result<std::path::PathBuf> {
-    // Try to find cargo in common locations (including actual rustup toolchain paths)
-    let paths = [
-        std::path::PathBuf::from(
-            "/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
-        ),
-        std::path::PathBuf::from("/root/.cargo/bin/cargo"),
-        std::path::PathBuf::from("/usr/local/cargo/bin/cargo"),
-        std::path::PathBuf::from("/usr/bin/cargo"),
-    ];
-
-    for path in &paths {
-        if path.exists() {
-            return Ok(path.clone());
-        }
-    }
-
-    // Try finding via which command
-    if let Ok(output) = Command::new("which").arg("cargo").output() {
+    // First, try to find cargo via PATH using which (Unix) or where (Windows)
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    if let Ok(output) = Command::new(which_cmd).arg("cargo").output() {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if !path.is_empty() {
-                return Ok(std::path::PathBuf::from(path));
+                let cargo_path = std::path::PathBuf::from(&path);
+                if cargo_path.exists() {
+                    return Ok(cargo_path);
+                }
             }
         }
     }
 
+    // Try standard installation locations based on user's home directory
+    if let Some(home) = dirs::home_dir() {
+        let candidates = [
+            home.join(".cargo").join("bin").join(cargo_binary_name()),
+            home.join(".rustup")
+                .join("toolchains")
+                .join("stable-x86_64-unknown-linux-gnu")
+                .join("bin")
+                .join(cargo_binary_name()),
+            home.join(".rustup")
+                .join("toolchains")
+                .join("stable-aarch64-unknown-linux-gnu")
+                .join("bin")
+                .join(cargo_binary_name()),
+            home.join(".rustup")
+                .join("toolchains")
+                .join("stable-x86_64-apple-darwin")
+                .join("bin")
+                .join(cargo_binary_name()),
+            home.join(".rustup")
+                .join("toolchains")
+                .join("stable-aarch64-apple-darwin")
+                .join("bin")
+                .join(cargo_binary_name()),
+        ];
+
+        for path in &candidates {
+            if path.exists() {
+                return Ok(path.clone());
+            }
+        }
+    }
+
+    // Try system-wide installation paths
+    let system_paths = if cfg!(windows) {
+        vec![std::path::PathBuf::from("C:\\Program Files\\Rust\\bin\\cargo.exe")]
+    } else {
+        vec![
+            std::path::PathBuf::from("/usr/local/cargo/bin/cargo"),
+            std::path::PathBuf::from("/usr/local/bin/cargo"),
+            std::path::PathBuf::from("/usr/bin/cargo"),
+        ]
+    };
+
+    for path in system_paths {
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
     // Fall back to just "cargo" and let PATH handle it
-    Ok(std::path::PathBuf::from("cargo"))
+    Ok(std::path::PathBuf::from(cargo_binary_name()))
+}
+
+/// Get the cargo binary name for the current platform.
+fn cargo_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "cargo.exe"
+    } else {
+        "cargo"
+    }
 }
 
 /// Get environment with cargo bin in PATH.
+///
+/// Ensures the user's cargo installation directories are available
+/// in PATH and sets RUSTUP_HOME/CARGO_HOME if not already set.
 fn get_cargo_env() -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = std::env::vars().collect();
 
+    // Get home directory - if unavailable, just return current env
+    let Some(home) = dirs::home_dir() else {
+        return env;
+    };
+
     // Ensure ~/.cargo/bin is in PATH
-    let cargo_bin = dirs::home_dir()
-        .map(|h| h.join(".cargo").join("bin"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo/bin"));
+    let cargo_bin = home.join(".cargo").join("bin");
+    if cargo_bin.exists() {
+        let path_sep = if cfg!(windows) { ";" } else { ":" };
+        let path = env
+            .iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
 
-    let path = env
-        .iter()
-        .find(|(k, _)| k == "PATH")
-        .map(|(_, v)| v.clone())
-        .unwrap_or_default();
-
-    if !path.contains(cargo_bin.to_string_lossy().as_ref()) {
-        let new_path = format!("{}:{}", cargo_bin.display(), path);
-        env.retain(|(k, _)| k != "PATH");
-        env.push(("PATH".to_string(), new_path));
+        if !path.contains(cargo_bin.to_string_lossy().as_ref()) {
+            let new_path = format!("{}{}{}", cargo_bin.display(), path_sep, path);
+            env.retain(|(k, _)| k != "PATH");
+            env.push(("PATH".to_string(), new_path));
+        }
     }
 
-    // Ensure RUSTUP_HOME is set
+    // Ensure RUSTUP_HOME is set if the directory exists
     if !env.iter().any(|(k, _)| k == "RUSTUP_HOME") {
-        let rustup_home = dirs::home_dir()
-            .map(|h| h.join(".rustup"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/root/.rustup"));
+        let rustup_home = home.join(".rustup");
         if rustup_home.exists() {
             env.push((
                 "RUSTUP_HOME".to_string(),
@@ -72,11 +135,9 @@ fn get_cargo_env() -> Vec<(String, String)> {
         }
     }
 
-    // Ensure CARGO_HOME is set
+    // Ensure CARGO_HOME is set if the directory exists
     if !env.iter().any(|(k, _)| k == "CARGO_HOME") {
-        let cargo_home = dirs::home_dir()
-            .map(|h| h.join(".cargo"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/root/.cargo"));
+        let cargo_home = home.join(".cargo");
         if cargo_home.exists() {
             env.push((
                 "CARGO_HOME".to_string(),
@@ -229,10 +290,16 @@ pub fn compile_to_wasm(project_dir: &Path) -> Result<HashMap<String, Vec<u8>>> {
 }
 
 /// Find existing WASM file (for --skip-compile mode).
+///
+/// Uses the manifest package name to locate the expected WASM file,
+/// falling back to any .wasm file if the expected one isn't found.
 pub fn find_existing_wasm(
     project_dir: &Path,
-    _manifest: &MoltManifest,
+    manifest: &MoltManifest,
 ) -> Result<HashMap<String, Vec<u8>>> {
+    // Expected WASM filename based on package name (using underscores)
+    let expected_wasm_name = format!("{}.wasm", manifest.package.name.replace('-', "_"));
+
     // Look for WASM file in standard locations
     let possible_targets = [
         "target/wasm32-wasip1/release",
@@ -246,6 +313,19 @@ pub fn find_existing_wasm(
             continue;
         }
 
+        // First, try to find the expected WASM file by name
+        let expected_path = target_dir.join(&expected_wasm_name);
+        if expected_path.exists() {
+            println!("  Found existing WASM: {:?}", expected_path);
+            let bytes = std::fs::read(&expected_path)
+                .with_context(|| format!("Failed to read {:?}", expected_path))?;
+
+            let mut result = HashMap::new();
+            result.insert("main".to_string(), bytes);
+            return Ok(result);
+        }
+
+        // Fall back to any .wasm file in the directory
         let entries: Vec<_> = std::fs::read_dir(&target_dir)
             .with_context(|| format!("Failed to read {:?}", target_dir))?
             .filter_map(|e| e.ok())
@@ -254,7 +334,10 @@ pub fn find_existing_wasm(
 
         if let Some(entry) = entries.first() {
             let wasm_path = entry.path();
-            println!("  Found existing WASM: {:?}", wasm_path);
+            println!(
+                "  Found existing WASM: {:?} (expected {})",
+                wasm_path, expected_wasm_name
+            );
             let bytes = std::fs::read(&wasm_path)
                 .with_context(|| format!("Failed to read {:?}", wasm_path))?;
 
@@ -264,5 +347,12 @@ pub fn find_existing_wasm(
         }
     }
 
-    anyhow::bail!("No existing WASM file found. Run `molt build` without --skip-compile first.");
+    anyhow::bail!(
+        "No existing WASM file found for package '{}'. \
+         Expected '{}' in one of: {:?}. \
+         Run `molt build` without --skip-compile first.",
+        manifest.package.name,
+        expected_wasm_name,
+        possible_targets
+    );
 }

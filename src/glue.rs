@@ -12,6 +12,75 @@ use heck::{ToPascalCase, ToSnakeCase};
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Validate and sanitize a source path for safe inclusion in generated Rust code.
+///
+/// This prevents potential code injection via malicious paths in molt.toml.
+/// Returns an error if the path is unsafe.
+fn validate_source_path(path: &Path) -> Result<String> {
+    let path_str = path.to_string_lossy();
+
+    // Check for characters that could break out of a Rust string literal
+    let forbidden_chars = ['"', '\\', '\n', '\r', '\0'];
+    for ch in forbidden_chars {
+        if path_str.contains(ch) {
+            anyhow::bail!(
+                "Source path {:?} contains forbidden character {:?}. \
+                 Paths must not contain quotes, backslashes, or control characters.",
+                path_str,
+                ch
+            );
+        }
+    }
+
+    // Disallow absolute paths - source should be relative to project
+    if path.is_absolute() {
+        anyhow::bail!(
+            "Source path {:?} is absolute. Source paths must be relative to the project directory.",
+            path_str
+        );
+    }
+
+    // Disallow paths that try to escape the project directory
+    // Note: We allow single ".." at the start since glue code is in molt-gen/
+    // but disallow multiple consecutive ".." or ".." appearing later in path
+    let components: Vec<_> = path.components().collect();
+    let mut depth: i32 = 0;
+    for component in &components {
+        match component {
+            std::path::Component::ParentDir => {
+                depth -= 1;
+                if depth < -1 {
+                    anyhow::bail!(
+                        "Source path {:?} attempts to escape project directory. \
+                         Paths with multiple parent directory references are not allowed.",
+                        path_str
+                    );
+                }
+            }
+            std::path::Component::Normal(_) => {
+                depth += 1;
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                anyhow::bail!(
+                    "Source path {:?} contains absolute path components.",
+                    path_str
+                );
+            }
+        }
+    }
+
+    // Ensure the path ends with .rs
+    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+        anyhow::bail!(
+            "Source path {:?} must be a Rust source file (ending in .rs).",
+            path_str
+        );
+    }
+
+    Ok(path_str.into_owned())
+}
+
 /// Generate the glue code for molt-gen/lib.rs.
 pub fn generate_glue(
     manifest: &MoltManifest,
@@ -35,7 +104,9 @@ pub fn generate_glue(
     // Include user implementation modules
     out.push_str("// User implementation modules\n");
     for (name, config) in &manifest.models {
-        let source_path = config.source.display();
+        // Validate and sanitize the source path to prevent code injection
+        let source_path = validate_source_path(&config.source)
+            .with_context(|| format!("Invalid source path for model '{}'", name))?;
         let module_name = name.to_snake_case();
         out.push_str(&format!(
             "#[path = \"../{source_path}\"]\nmod {module_name}_impl;\n",
@@ -354,5 +425,45 @@ mod tests {
         assert!(glue.contains("pub struct DragGuestImpl"));
         assert!(glue.contains("impl DragGuest for DragGuestImpl"));
         assert!(glue.contains("export!(DragGuestImpl)"));
+    }
+
+    #[test]
+    fn test_validate_source_path_valid() {
+        // Valid paths should pass
+        assert!(validate_source_path(Path::new("src/model.rs")).is_ok());
+        assert!(validate_source_path(Path::new("src/subdir/model.rs")).is_ok());
+        assert!(validate_source_path(Path::new("model.rs")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_source_path_rejects_quotes() {
+        // Paths with quotes could break out of string literals
+        let result = validate_source_path(Path::new("src/model\".rs"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("forbidden character"));
+    }
+
+    #[test]
+    fn test_validate_source_path_rejects_absolute() {
+        // Absolute paths are not allowed
+        let result = validate_source_path(Path::new("/etc/passwd"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("absolute"));
+    }
+
+    #[test]
+    fn test_validate_source_path_rejects_directory_escape() {
+        // Paths that escape the project directory are not allowed
+        let result = validate_source_path(Path::new("../../etc/passwd.rs"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("escape"));
+    }
+
+    #[test]
+    fn test_validate_source_path_rejects_non_rust() {
+        // Only .rs files are allowed
+        let result = validate_source_path(Path::new("src/model.py"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(".rs"));
     }
 }

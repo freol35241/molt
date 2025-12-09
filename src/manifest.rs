@@ -115,11 +115,36 @@ impl MoltManifest {
             }
         }
 
-        // Validate target-specific options if output_dir is specified
-        for target in self.targets.values() {
-            if let Some(ref dir) = target.output_dir {
-                if dir.as_os_str().is_empty() {
-                    // Empty string output_dir is treated as None (use default)
+        // Validate target configurations
+        let known_targets = ["python", "rust", "javascript", "js"];
+        for (target_name, target_config) in &self.targets {
+            // Warn about unknown targets (but don't fail - allows future extensibility)
+            if !known_targets.contains(&target_name.as_str()) {
+                eprintln!(
+                    "Warning: Unknown target '{}'. Known targets: {:?}",
+                    target_name, known_targets
+                );
+            }
+
+            // Validate package_name if specified (must be valid identifier)
+            if let Some(ref pkg_name) = target_config.package_name {
+                if pkg_name.is_empty() {
+                    anyhow::bail!(
+                        "Target '{}' has empty package_name. Remove the field to use default.",
+                        target_name
+                    );
+                }
+                // Check for valid Python/Rust identifier characters
+                if !pkg_name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                {
+                    anyhow::bail!(
+                        "Target '{}' package_name '{}' contains invalid characters. \
+                         Use only alphanumeric characters, underscores, and hyphens.",
+                        target_name,
+                        pkg_name
+                    );
                 }
             }
         }

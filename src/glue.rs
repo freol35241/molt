@@ -440,7 +440,10 @@ mod tests {
         // Paths with quotes could break out of string literals
         let result = validate_source_path(Path::new("src/model\".rs"));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("forbidden character"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("forbidden character"));
     }
 
     #[test]

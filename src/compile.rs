@@ -67,7 +67,9 @@ fn find_cargo() -> Result<std::path::PathBuf> {
 
     // Try system-wide installation paths
     let system_paths = if cfg!(windows) {
-        vec![std::path::PathBuf::from("C:\\Program Files\\Rust\\bin\\cargo.exe")]
+        vec![std::path::PathBuf::from(
+            "C:\\Program Files\\Rust\\bin\\cargo.exe",
+        )]
     } else {
         vec![
             std::path::PathBuf::from("/usr/local/cargo/bin/cargo"),
